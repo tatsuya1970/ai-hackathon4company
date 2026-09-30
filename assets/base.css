@@ -31,6 +31,11 @@
 html{scroll-behavior:smooth;font-size:112.5%}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 body{margin:0;background:var(--white)}
+/* 下書き表示の透かし（公開前に削除） */
+body::after{content:"DRAFT";position:fixed;inset:0;z-index:9999;pointer-events:none;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:700;font-size:min(28vw,40vh);letter-spacing:.08em;
+  color:rgba(20,33,61,.07);transform:rotate(-24deg);user-select:none}
 
 .lp{background:var(--white);color:var(--ink);font-family:var(--gothic);line-height:1.85;
   -webkit-font-smoothing:antialiased;overflow-x:hidden}
