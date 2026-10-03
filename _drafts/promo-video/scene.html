@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>promo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=block">
+<style>
+  html,body{margin:0;padding:0;background:#000;overflow:hidden}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="cv" width="1920" height="1080"></canvas>
+<script>
+const W = 1920, H = 1080;
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+/* ───────── design tokens（サイトの base.css と同一） ───────── */
+const C = {
+  paper:'#FFFDFA', tint:'#F7F3EC', tintAlt:'#EFE7DB',
+  navy:'#14213D', navyDeep:'#0A1527', navyMid:'#2E4D7B', navySoft:'#5B7CAE',
+  shu:'#C8102E', shuInk:'#9E0B22',
+  lemon:'#F5D90A',
+  ink:'#242220', muted:'#6B655F', rule:'#E4DACD',
+  onDark:'#F4F1EC'
+};
+const SERIF  = '"Noto Serif JP", serif';
+const GOTHIC = '"Noto Sans JP", sans-serif';
+const LATIN  = '"Space Grotesk", sans-serif';
+
+/* ───────── easing / util ───────── */
+const cl = (x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const outExpo  = x => x>=1?1:1-Math.pow(2,-10*x);
+const outCubic = x => 1-Math.pow(1-x,3);
+const outQuint = x => 1-Math.pow(1-x,5);
+const outBack  = x => 1+2.2*Math.pow(x-1,3)+1.4*Math.pow(x-1,2);
+const ioCubic  = x => x<.5 ? 4*x*x*x : 1-Math.pow(-2*x+2,3)/2;
+/* 区間 [a,b] の進捗 */
+const seg = (t,a,b)=>cl((t-a)/(b-a));
+
+function font(weight,size,family){ return weight+' '+size+'px '+family; }
+function setLS(v){ try{ ctx.letterSpacing = v; }catch(e){} }
+
+/* ───────── 和紙のテクスチャ（決定論的ノイズ） ───────── */
+let grainCv = null;
+function buildGrain(){
+  const g = document.createElement('canvas'); g.width=W; g.height=H;
+  const gx = g.getContext('2d');
+  const img = gx.createImageData(W,H);
+  let s = 20250403 >>> 0;
+  const rnd = ()=>{ s^=s<<13; s>>>=0; s^=s>>17; s^=s<<5; s>>>=0; return s/4294967296; };
+  for(let i=0;i<img.data.length;i+=4){
+    const v = (rnd()*255)|0;
+    img.data[i]=img.data[i+1]=img.data[i+2]=v;
+    img.data[i+3]=10;
+  }
+  gx.putImageData(img,0,0);
+  grainCv = g;
+}
+
+/* ───────── 青海波 ───────── */
+function seigaiha(r, color, alpha, lw, dy){
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  const vs = r*0.52, hs = r*2;
+  const rings = [1,.74,.49,.25];
+  let row = 0;
+  for(let y = -r + (dy % vs); y < H + r; y += vs, row++){
+    const ox = (row%2) ? r : 0;
+    for(let x = -hs + ox; x < W + hs; x += hs){
+      for(const k of rings){
+        ctx.beginPath();
+        ctx.arc(x, y, r*k, Math.PI, Math.PI*2);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
+}
+
+/* ───────── 背景 ───────── */
+function bgPaper(t){
+  ctx.fillStyle = C.paper; ctx.fillRect(0,0,W,H);
+  const g = ctx.createLinearGradient(0,0,W,H);
+  g.addColorStop(0,'rgba(247,243,236,0)');
+  g.addColorStop(1,'rgba(239,231,219,.9)');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  seigaiha(220, C.navy, .055, 2, -t*7);
+}
+function bgNavy(t, deep){
+  ctx.fillStyle = deep ? C.navyDeep : C.navy; ctx.fillRect(0,0,W,H);
+  const g = ctx.createRadialGradient(W*.30,H*.32,60, W*.30,H*.32, W*.78);
+  g.addColorStop(0,'rgba(46,77,123,.55)');
+  g.addColorStop(1,'rgba(10,21,39,0)');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  seigaiha(230, '#A9C2E4', .085, 2, -t*9);
+}
+function vignette(){
+  const g = ctx.createRadialGradient(W/2,H/2,H*.42, W/2,H/2,H*1.02);
+  g.addColorStop(0,'rgba(0,0,0,0)');
+  g.addColorStop(1,'rgba(10,21,39,.26)');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+}
+function grain(){
+  if(!grainCv) return;
+  ctx.save(); ctx.globalAlpha = .55; ctx.drawImage(grainCv,0,0); ctx.restore();
+}
+
+/* ───────── テキスト：マスク・リビール ───────── */
+/* p: 0→1 で左から現れる。bar=true でレモン／朱のワイプバーが先行する */
+function reveal(text, x, y, p, opt){
+  opt = opt || {};
+  if(p<=0) return 0;
+  const w = ctx.measureText(text).width;
+  const asc = opt.size || 80;
+  const e = outQuint(p);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x-10, y-asc*1.3, w*e+20, asc*2.2);
+  ctx.clip();
+  ctx.globalAlpha = (opt.alpha==null?1:opt.alpha);
+  ctx.translate(0,(1-outExpo(p))*(opt.rise==null?18:opt.rise));
+  ctx.fillText(text,x,y);
+  ctx.restore();
+  if(opt.bar && p<1){
+    ctx.save();
+    ctx.fillStyle = opt.bar;
+    ctx.fillRect(x+w*e, y-asc*0.92, Math.max(6, asc*0.10), asc*1.22);
+    ctx.restore();
+  }
+  return w;
+}
+
+/* 単純フェード＋上昇 */
+function rise(fn, p, dist){
+  if(p<=0) return;
+  ctx.save();
+  ctx.globalAlpha = cl(p*1.35);
+  ctx.translate(0,(1-outExpo(p))*(dist==null?26:dist));
+  fn();
+  ctx.restore();
+}
+
+/* 細いラベル（ラテン） */
+function label(text,x,y,p,color,size,ls){
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.font = font(500, size||26, LATIN);
+  setLS(ls||'.26em');
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  reveal(text.toUpperCase(), x, y, p, {size:size||26, rise:10});
+  setLS('0px');
+  ctx.restore();
+}
+
+/* 「解」の朱印 */
+function hanko(cx, cy, s, p){
+  const e = outBack(cl(p));
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.rotate((1-cl(p))*-0.22);
+  ctx.scale(e,e);
+  ctx.globalAlpha = cl(p*2);
+  ctx.fillStyle = C.shu;
+  ctx.fillRect(-s/2,-s/2,s,s);
+  ctx.fillStyle = C.lemon;
+  ctx.fillRect(-s/2, s/2-s*0.115, s, s*0.115);
+  ctx.fillStyle = C.paper;
+  ctx.font = font(900, s*0.62, SERIF);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('解', 0, -s*0.045);
+  ctx.restore();
+}
+
+/* 写真（デュオトーン気味に敷く） */
+const photo = new Image();
+photo.src = 'hero.jpg';
+function drawPhoto(alpha, zoom, pan){
+  if(!photo.complete || !photo.naturalWidth) return;
+  const iw = photo.naturalWidth, ih = photo.naturalHeight;
+  const sc = Math.max(W/iw, H/ih) * zoom;
+  const dw = iw*sc, dh = ih*sc;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(photo, (W-dw)/2 - pan, (H-dh)/2, dw, dh);
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════
+   S1  0.00–3.20   現場のリアルな課題
+   ══════════════════════════════════════════════ */
+function s1(t){
+  bgPaper(t);
+
+  // 左の朱の縦罫
+  const r = seg(t,0.10,0.95);
+  ctx.save();
+  ctx.fillStyle = C.shu;
+  ctx.fillRect(150, 300, 5, outExpo(r)*470);
+  ctx.restore();
+
+  label('Voices from the field', 198, 322, seg(t,0.22,0.95), C.muted, 25);
+
+  ctx.fillStyle = C.ink;
+  ctx.font = font(700, 74, SERIF);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  setLS('.02em');
+  reveal('「毎日この作業に、2時間かかっている」', 198, 470, seg(t,0.42,1.55), {size:74, bar:C.shu});
+  reveal('「ベテランが辞めたら、誰もわからない」', 198, 600, seg(t,0.92,2.05), {size:74, bar:C.shu});
+  setLS('0px');
+
+  // 締めの一行
+  const p3 = seg(t,1.70,2.45);
+  rise(()=>{
+    ctx.fillStyle = C.muted;
+    ctx.font = font(500, 36, GOTHIC);
+    setLS('.08em');
+    ctx.fillText('— その「困った」、お題にしませんか。', 198, 735);
+    setLS('0px');
+  }, p3, 22);
+
+  // 右下の写真（小さく、紙の上に貼った写真のように）
+  const pp = seg(t,0.55,1.9);
+  if(pp>0 && photo.complete){
+    const pw = 560, ph = 330, px = 1210, py = 640;
+    ctx.save();
+    ctx.globalAlpha = outCubic(pp);
+    ctx.translate(0,(1-outExpo(pp))*34);
+    ctx.shadowColor = 'rgba(20,33,61,.20)'; ctx.shadowBlur = 48; ctx.shadowOffsetY = 20;
+    ctx.fillStyle = C.paper;
+    ctx.fillRect(px-14, py-14, pw+28, ph+28+40);
+    ctx.shadowColor='transparent';
+    ctx.save();
+    ctx.beginPath(); ctx.rect(px,py,pw,ph); ctx.clip();
+    const sc = Math.max(pw/photo.naturalWidth, ph/photo.naturalHeight)*1.06;
+    ctx.drawImage(photo, px+(pw-photo.naturalWidth*sc)/2, py+(ph-photo.naturalHeight*sc)/2,
+                  photo.naturalWidth*sc, photo.naturalHeight*sc);
+    ctx.fillStyle='rgba(20,33,61,.12)'; ctx.fillRect(px,py,pw,ph);
+    ctx.restore();
+    ctx.fillStyle = C.muted;
+    ctx.font = font(500, 20, LATIN);
+    setLS('.20em'); ctx.fillText('HACK TIME', px, py+ph+36); setLS('0px');
+    ctx.restore();
+  }
+
+  grain(); vignette();
+}
+
+/* ══════════════════════════════════════════════
+   S2  3.20–6.40   キャッチ
+   ══════════════════════════════════════════════ */
+function s2(t){
+  bgNavy(t);
+
+  label('Your challenge  →  our hack', 150, 300, seg(t,0.18,0.9), C.lemon, 28);
+
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.fillStyle = C.onDark;
+  ctx.font = font(900, 138, SERIF);
+  setLS('.01em');
+  reveal('御社の課題、', 150, 500, seg(t,0.30,1.35), {size:138, bar:C.lemon});
+  setLS('0px');
+
+  // 2行目：「3」をレモンで強調
+  const p2 = seg(t,0.72,1.85);
+  if(p2>0){
+    ctx.save();
+    ctx.font = font(900, 138, SERIF);
+    const a = '3', b = '時間で解きます。';
+    const wa = ctx.measureText(a).width, wb = ctx.measureText(b).width;
+    const total = wa + wb;
+    const e = outQuint(p2);
+    ctx.beginPath(); ctx.rect(140, 500, (total+40)*e, 260); ctx.clip();
+    ctx.translate(0,(1-outExpo(p2))*20);
+    ctx.fillStyle = C.lemon; ctx.fillText(a, 150, 672);
+    ctx.fillStyle = C.onDark; ctx.fillText(b, 150+wa, 672);
+    ctx.restore();
+    if(p2<1){ ctx.fillStyle=C.lemon; ctx.fillRect(150+total*e, 560, 14, 128); }
+    // 「3」の下のレモン下線
+    const ul = seg(t,1.35,2.0);
+    if(ul>0){ ctx.fillStyle=C.lemon; ctx.fillRect(150, 700, wa*outExpo(ul), 9); }
+  }
+
+  // 下段メタ 30min / 3h / 1社
+  const items = [['30','min','課題説明'],['3','hours','ハックタイム'],['1','社','お題は御社の課題だけ']];
+  const bx = 150, by = 880, gapx = 420;
+  items.forEach((it,i)=>{
+    const p = seg(t, 1.55+i*0.16, 2.35+i*0.16);
+    if(p<=0) return;
+    ctx.save();
+    ctx.globalAlpha = cl(p*1.4);
+    ctx.translate(0,(1-outExpo(p))*20);
+    const x = bx+i*gapx;
+    ctx.fillStyle = 'rgba(244,241,236,.22)';
+    ctx.fillRect(x, by-62, 2, 92);
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    ctx.fillStyle = C.onDark;
+    ctx.font = font(700, 70, LATIN);
+    const n = it[0];
+    ctx.fillText(n, x+26, by);
+    const wn = ctx.measureText(n).width;
+    ctx.fillStyle = C.lemon;
+    ctx.font = font(500, 28, /\d/.test(it[1])||it[1].length>2?LATIN:GOTHIC);
+    ctx.font = font(500, 28, it[1]==='社'?GOTHIC:LATIN);
+    ctx.fillText(it[1], x+34+wn, by-34);
+    ctx.fillStyle = 'rgba(244,241,236,.72)';
+    ctx.font = font(500, 26, GOTHIC);
+    ctx.fillText(it[2], x+26, by+34);
+    ctx.restore();
+  });
+
+  grain(); vignette();
+}
+
+/* ══════════════════════════════════════════════
+   S3  6.40–9.90   課題 → 解決策（4ステップ）
+   ══════════════════════════════════════════════ */
+function s3(t){
+  ctx.fillStyle = C.navyDeep; ctx.fillRect(0,0,W,H);
+  drawPhoto(0.30, 1.04 + t*0.012, (t-1.0)*22);
+  ctx.fillStyle = 'rgba(10,21,39,.76)'; ctx.fillRect(0,0,W,H);
+  seigaiha(230, '#A9C2E4', .07, 2, -t*9);
+
+  label('From challenge to prototype', 150, 206, seg(t,0.10,0.8), C.lemon, 26);
+  ctx.fillStyle = C.onDark;
+  ctx.font = font(900, 66, SERIF);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  setLS('.02em');
+  reveal('「課題」が「解決策」になるまで', 150, 300, seg(t,0.20,1.15), {size:66});
+  setLS('0px');
+
+  const steps = [
+    ['御社',   '課題を提供',        '現場で困っていることを、\nそのままお聞かせください'],
+    ['30min', '当日、課題を説明',   '背景・制約・理想の姿を、\n御社から直接伝えます'],
+    ['3h',    '参加者がハック',     'AIもツールも制限なし。\n多様な視点で一斉に解きます'],
+    ['OUT',   '動くプロトタイプ',   '解決策を、その場で\n目の前で発表します']
+  ];
+  const cw = 384, gap = 32, x0 = 150, y0 = 430, chh = 330;
+
+  steps.forEach((st,i)=>{
+    const p = seg(t, 0.62+i*0.20, 1.52+i*0.20);
+    if(p<=0) return;
+    const x = x0 + i*(cw+gap);
+    const last = i===3;
+    ctx.save();
+    ctx.globalAlpha = cl(p*1.5);
+    ctx.translate(0,(1-outExpo(p))*36);
+
+    ctx.fillStyle = last ? 'rgba(200,16,46,.20)' : 'rgba(244,241,236,.055)';
+    ctx.fillRect(x, y0, cw, chh);
+    ctx.strokeStyle = last ? 'rgba(200,16,46,.85)' : 'rgba(244,241,236,.20)';
+    ctx.lineWidth = 2; ctx.strokeRect(x+1, y0+1, cw-2, chh-2);
+    ctx.fillStyle = last ? C.shu : (i<2 ? C.lemon : C.navySoft);
+    ctx.fillRect(x, y0, cw, 6);
+
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    ctx.fillStyle = last ? C.lemon : (i<2 ? C.lemon : 'rgba(244,241,236,.78)');
+    ctx.font = font(700, 27, LATIN); setLS('.16em');
+    ctx.fillText(st[0], x+34, y0+74); setLS('0px');
+
+    ctx.fillStyle = C.onDark;
+    ctx.font = font(700, 40, SERIF);
+    ctx.fillText(st[1], x+34, y0+160);
+
+    ctx.fillStyle = 'rgba(244,241,236,.66)';
+    ctx.font = font(400, 24, GOTHIC);
+    st[2].split('\n').forEach((ln,k)=> ctx.fillText(ln, x+34, y0+218+k*38));
+    ctx.restore();
+
+    // 矢印
+    if(i<3){
+      const ap = seg(t, 0.95+i*0.20, 1.35+i*0.20);
+      if(ap>0){
+        ctx.save();
+        ctx.globalAlpha = cl(ap);
+        ctx.strokeStyle = C.lemon; ctx.lineWidth = 3;
+        const ax = x+cw+6, ay = y0+chh/2;
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax+20*outExpo(ap), ay); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(ax+20, ay-7); ctx.lineTo(ax+20, ay+7); ctx.lineTo(ax+20+9, ay);
+        ctx.closePath(); ctx.fillStyle=C.lemon; ctx.globalAlpha=cl(ap*ap); ctx.fill();
+        ctx.restore();
+      }
+    }
+  });
+
+  grain(); vignette();
+}
+
+/* ══════════════════════════════════════════════
+   S4  9.90–12.10   開発委託との違い
+   ══════════════════════════════════════════════ */
+function s4(t){
+  ctx.fillStyle = C.tint; ctx.fillRect(0,0,W,H);
+  const g = ctx.createLinearGradient(0,0,W,H);
+  g.addColorStop(0,'rgba(255,253,250,.9)'); g.addColorStop(1,'rgba(239,231,219,.6)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  seigaiha(220, C.navy, .05, 2, -t*7);
+
+  label('vs. 通常の開発委託', 150, 212, seg(t,0.06,0.6), C.muted, 25);
+  ctx.fillStyle = C.ink;
+  ctx.font = font(900, 64, SERIF);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  setLS('.02em');
+  reveal('ここが、違います。', 150, 306, seg(t,0.12,0.85), {size:64, bar:C.shu});
+  setLS('0px');
+
+  const rows = [
+    ['かかる時間',   '要件定義から数か月',  '当日 3時間で試作品'],
+    ['出てくる案',   '基本は 1案',          'チームの数だけ'],
+    ['費用',         '数十万〜数百万円',     '30万円 〜']
+  ];
+  const ry = 430, rh = 150;
+  rows.forEach((r,i)=>{
+    const p = seg(t, 0.38+i*0.17, 1.12+i*0.17);
+    if(p<=0) return;
+    const y = ry + i*rh;
+    ctx.save();
+    ctx.globalAlpha = cl(p*1.5);
+    ctx.translate(0,(1-outExpo(p))*26);
+    ctx.textAlign='left'; ctx.textBaseline='middle';
+
+    ctx.strokeStyle = C.rule; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(150, y+rh-34); ctx.lineTo(1770, y+rh-34); ctx.stroke();
+
+    ctx.fillStyle = C.muted;
+    ctx.font = font(500, 26, GOTHIC); setLS('.10em');
+    ctx.fillText(r[0], 150, y+10); setLS('0px');
+
+    ctx.fillStyle = 'rgba(107,101,95,.85)';
+    ctx.font = font(500, 44, SERIF);
+    ctx.fillText(r[1], 470, y+10);
+
+    // 矢印
+    ctx.strokeStyle = C.shu; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(1000, y+10); ctx.lineTo(1046, y+10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(1046, y+2); ctx.lineTo(1046, y+18); ctx.lineTo(1058, y+10);
+    ctx.closePath(); ctx.fillStyle = C.shu; ctx.fill();
+
+    ctx.fillStyle = C.ink;
+    ctx.font = font(900, 54, SERIF);
+    const tw = ctx.measureText(r[2]).width;
+    ctx.fillStyle = 'rgba(245,217,10,.55)';
+    ctx.fillRect(1100, y+26, tw*outExpo(cl((p-0.35)/0.6)), 16);
+    ctx.fillStyle = C.ink;
+    ctx.fillText(r[2], 1100, y+10);
+    ctx.restore();
+  });
+
+  const pn = seg(t,1.20,1.85);
+  rise(()=>{
+    ctx.fillStyle = C.muted;
+    ctx.font = font(400, 24, GOTHIC);
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    ctx.fillText('※つくるのは試作品です。本番利用は最優秀賞チームとの協業などで仕上げます。', 150, 960);
+  }, pn, 18);
+
+  grain(); vignette();
+}
+
+/* ══════════════════════════════════════════════
+   S5  12.10–15.00   ロゴ + CTA
+   ══════════════════════════════════════════════ */
+function s5(t){
+  bgNavy(t, true);
+  // 下から立ち上がる青海波
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, H-300, W, 300); ctx.clip();
+  seigaiha(170, C.lemon, .10, 2, -t*16);
+  ctx.restore();
+
+  hanko(960, 318, 150, seg(t,0.08,0.78));
+
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  const p1 = seg(t,0.40,1.25);
+  if(p1>0){
+    ctx.save();
+    ctx.globalAlpha = cl(p1*1.4);
+    ctx.translate(0,(1-outExpo(p1))*24);
+    ctx.fillStyle = C.onDark;
+    ctx.font = font(900, 112, SERIF);
+    setLS('.03em');
+    ctx.fillText('課題解決AIハッカソン', 960, 560);
+    setLS('0px');
+    ctx.restore();
+  }
+
+  const p2 = seg(t,0.70,1.25);
+  if(p2>0){ ctx.fillStyle = C.shu; ctx.fillRect(960-170*outExpo(p2), 610, 340*outExpo(p2), 6); }
+
+  const p3 = seg(t,0.85,1.6);
+  rise(()=>{
+    ctx.fillStyle = C.onDark;
+    ctx.font = font(700, 46, SERIF);
+    ctx.textAlign='center';
+    ctx.fillText('開催していただける企業・団体・自治体を募集しています', 960, 710);
+  }, p3, 22);
+
+  const p4 = seg(t,1.10,1.85);
+  rise(()=>{
+    ctx.textAlign='center';
+    ctx.fillStyle = C.lemon;
+    ctx.font = font(700, 44, LATIN);
+    setLS('.04em');
+    ctx.fillText('hackathon.takemura-techlab.com', 960, 820);
+    setLS('0px');
+  }, p4, 20);
+
+  const p5 = seg(t,1.35,2.1);
+  rise(()=>{
+    ctx.textAlign='center';
+    ctx.fillStyle = 'rgba(244,241,236,.62)';
+    ctx.font = font(500, 26, GOTHIC);
+    setLS('.12em');
+    ctx.fillText('企画・運営：タケムラテックラボ', 960, 890);
+    setLS('0px');
+  }, p5, 16);
+
+  // 下端のレモンバー（og.png と同じ処理）
+  const p6 = seg(t,1.55,2.4);
+  ctx.fillStyle = C.lemon;
+  ctx.fillRect(0, H-16, W*outExpo(p6), 16);
+
+  grain(); vignette();
+}
+
+/* ───────── シーン構成 / ワイプ ───────── */
+const SCENES = [
+  {s:0.00,  e:3.20,  f:s1, wipe:C.shu},
+  {s:3.20,  e:6.40,  f:s2, wipe:C.lemon},
+  {s:6.40,  e:9.90,  f:s3, wipe:C.lemon},
+  {s:9.90,  e:12.10, f:s4, wipe:C.shu},
+  {s:12.10, e:15.00, f:s5, wipe:C.lemon}
+];
+const TR = 0.42;   // ワイプ時間
+const SLANT = 110; // ワイプのエッジの傾き
+
+function clipWipe(p){
+  const e = ioCubic(p);
+  const x = -SLANT + (W + SLANT*2) * e;
+  ctx.beginPath();
+  ctx.moveTo(-5, -5);
+  ctx.lineTo(x + SLANT, -5);
+  ctx.lineTo(x - SLANT, H+5);
+  ctx.lineTo(-5, H+5);
+  ctx.closePath();
+  ctx.clip();
+  return x;
+}
+
+function renderFrame(t){
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
+
+  let k = 0;
+  for(let i=0;i<SCENES.length;i++) if(t >= SCENES[i].s) k = i;
+  const sc = SCENES[k];
+  const into = t - sc.s;
+
+  if(k>0 && into < TR){
+    const prev = SCENES[k-1];
+    prev.f(t - prev.s);                 // 前シーンを継続描画
+    const p = into / TR;
+    ctx.save();
+    const x = clipWipe(p);
+    sc.f(into);
+    ctx.restore();
+    // ワイプのエッジライン
+    ctx.save();
+    ctx.strokeStyle = sc.wipe; ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.moveTo(x+SLANT, -5); ctx.lineTo(x-SLANT, H+5); ctx.stroke();
+    ctx.restore();
+  } else {
+    sc.f(into);
+  }
+
+  // 冒頭のフェードイン（末尾は CTA のまま保持）
+  if(t < 0.30){ ctx.fillStyle='rgba(10,21,39,'+(1-t/0.30)+')'; ctx.fillRect(0,0,W,H); }
+}
+
+window.__ready = false;
+window.__render = renderFrame;
+
+(async ()=>{
+  buildGrain();
+  const specs = [
+    '900 138px "Noto Serif JP"','700 74px "Noto Serif JP"','500 44px "Noto Serif JP"',
+    '700 26px "Noto Sans JP"','500 26px "Noto Sans JP"','400 24px "Noto Sans JP"',
+    '700 44px "Space Grotesk"','500 26px "Space Grotesk"'
+  ];
+  try{
+    await Promise.all(specs.map(s=>document.fonts.load(s,'課題解決AIハッカソン御社時間でますABC0123')));
+    await document.fonts.ready;
+  }catch(e){}
+  if(!photo.complete){ await new Promise(r=>{ photo.onload=r; photo.onerror=r; }); }
+  renderFrame(0);
+  window.__ready = true;
+})();
+</script>
+</body>
+</html>
