@@ -1,5 +1,5 @@
 /**
- * 課題解決ハッカソン お問い合わせフォームを生成する Google Apps Script。
+ * 課題解決AIハッカソン お問い合わせフォームを生成する Google Apps Script。
  *
  * 使い方:
  *   1. https://script.google.com/ で「新しいプロジェクト」を作成
@@ -8,7 +8,7 @@
  *   4. 「実行ログ」に公開URL・編集URL・回答スプレッドシートのURLが出力される
  */
 function createForm() {
-  var form = FormApp.create('課題解決ハッカソン お問い合わせ');
+  var form = FormApp.create('課題解決AIハッカソン お問い合わせ');
 
   form.setDescription(
     '「うちの課題でもできる？」「どれくらい手間がかかる？」——検討の前の段階で構いません。\n' +
@@ -87,7 +87,7 @@ function createForm() {
   }
 
   // --- 回答をスプレッドシートに集約 ---
-  var ss = SpreadsheetApp.create('課題解決ハッカソン お問い合わせ 回答');
+  var ss = SpreadsheetApp.create('課題解決AIハッカソン お問い合わせ 回答');
   form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
 
   Logger.log('--------------------------------------------------');

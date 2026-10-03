@@ -83,7 +83,7 @@ def make_og():
 
     # 主見出し（枠内に収まる級数へ自動調整）
     inner = W - 72 * 2
-    head = "課題解決ハッカソン"
+    head = "課題解決AIハッカソン"
     d.text((72, 226), head, font=fit(d, head, MINCHO_B, 128, inner), fill=AI)
 
     # 朱の罫
@@ -92,7 +92,7 @@ def make_og():
     # 従見出し
     sub = "御社のリアルな課題を、3時間で解く。"
     d.text((72, 424), sub, font=fit(d, sub, MINCHO_R, 44, inner), fill=AI_MID)
-    d.text((74, 496), "開催企業・団体・自治体、ならびに参加者を募集しています",
+    d.text((74, 496), "開催していただける企業・団体・自治体を募集しています",
            font=font(GOTHIC_B, 24), fill=MUTED)
 
     # 下端：レモンの帯
