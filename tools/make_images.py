@@ -90,9 +90,9 @@ def make_og():
     d.rectangle([74, 388, 74 + 300, 393], fill=SHU)
 
     # 従見出し
-    sub = "御社のリアルな課題を、3時間で解く。"
+    sub = "課題も新規事業も、3時間で形にする。"
     d.text((72, 424), sub, font=fit(d, sub, MINCHO_R, 44, inner), fill=AI_MID)
-    d.text((74, 496), "開催していただける企業・団体・自治体を募集しています",
+    d.text((74, 496), "企業・団体・自治体のお題（課題・新規事業）を募集しています",
            font=font(GOTHIC_B, 24), fill=MUTED)
 
     # 下端：レモンの帯
