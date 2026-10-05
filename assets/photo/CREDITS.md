@@ -5,7 +5,7 @@
 
 | ファイル | 内容 | 撮影者 | 元ページ |
 | --- | --- | --- | --- |
-| brief | ホワイトボードの前で説明する2人 | Walls.io | https://unsplash.com/photos/wODKtuRipCA |
+| brief | 会議室で、着席した参加者に向かって説明する人 | Vitaly Gariev | https://unsplash.com/photos/SvYifX5HkeQ |
 | room | 机いっぱいのノートPCで作業する人たち | Marvin Meyer | https://unsplash.com/photos/SYTO3xs06fU |
 | team | ノートPCを囲んで相談するチーム | Vitaly Gariev | https://unsplash.com/photos/yd_RKGH_RH4 |
 | coding | ターミナルとコードを表示したノートPC | park ingyeom | https://unsplash.com/photos/wm0Zdvf1eeM |
