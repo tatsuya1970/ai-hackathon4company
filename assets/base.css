@@ -818,6 +818,27 @@ section.alt .tt-row:hover{background:var(--paper)}
 .facts .k{font-size:.7rem;font-weight:800;color:var(--muted);letter-spacing:.06em}
 .facts .v{font-weight:800;color:var(--ink-strong)}
 
+/* ─────────────────────────  16b. PHOTOS  ───────────────────────── */
+.gal{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:20px}
+@media(min-width:760px){.gal{grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(16px,2.2vw,24px)}}
+.shot{margin:0}
+.shot .ph{aspect-ratio:4/3;overflow:hidden;border-radius:var(--radius);border:1px solid var(--navy);
+  background:var(--tint-alt);box-shadow:6px 6px 0 var(--navy)}
+.shot .ph picture,.shot .ph img{display:block;width:100%;height:100%}
+.shot .ph img{object-fit:cover;filter:saturate(.92);transition:transform .7s var(--e-out)}
+.shot:hover .ph img{transform:scale(1.04)}
+.shot figcaption{margin:.8em 6px 0 0;font-size:.78rem;font-weight:700;color:var(--muted);line-height:1.75}
+@media(max-width:759px){.shot .ph{box-shadow:4px 4px 0 var(--navy)}.shot figcaption{font-size:.72rem}}
+/* 当日の流れ：主要ステップの写真 */
+.tt-row .ph{grid-column:2;display:block;margin-top:12px;max-width:240px;aspect-ratio:3/2;overflow:hidden;
+  border-radius:var(--radius);border:1px solid var(--navy);background:var(--tint-alt)}
+.tt-row .ph picture,.tt-row .ph img{display:block;width:100%;height:100%}
+.tt-row .ph img{object-fit:cover;filter:saturate(.92)}
+@media(min-width:900px){
+  .tt-row.has-ph{grid-template-columns:140px 1fr 200px;align-items:start}
+  .tt-row .ph{grid-column:3;margin-top:0;max-width:none;box-shadow:5px 5px 0 var(--navy);margin-right:5px}
+}
+
 /* ─────────────────────────  17. PLAN / PRIZE  ───────────────────────── */
 .prize-hero{margin-top:var(--gap);display:grid;grid-template-columns:1fr;gap:0}
 @media(min-width:900px){.prize-hero{grid-template-columns:1.02fr .98fr;align-items:stretch}}

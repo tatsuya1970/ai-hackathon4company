@@ -132,7 +132,7 @@
   (function reveal() {
     if (REDUCE || !("IntersectionObserver" in window)) return;
     var sel = ".sec-head,.feat,.card,.step,.steps,.tt-row,.statement,.chips,.sub-h,.note,.ind," +
-      ".cmp,.prize-hero,.qa,.ov-row,.contact,.crosslink,.tbar,.tscale,.tt-note,.btns,.ex,.mid-h,.mid-p,.vs-p," +
+      ".cmp,.prize-hero,.qa,.ov-row,.contact,.crosslink,.tbar,.tscale,.tt-note,.btns,.ex,.mid-h,.mid-p,.vs-p,.shot," +
       ".band-head,.flowline";
     var io = new IntersectionObserver(function (es) {
       es.forEach(function (e) {
