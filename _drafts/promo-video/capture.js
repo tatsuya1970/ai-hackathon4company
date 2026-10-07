@@ -4,7 +4,7 @@ const fs = require('fs');
 
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const HERE = __dirname;
-const DUR = 15.0, FPS = 60;
+const DUR = 13.3, FPS = 60;
 
 (async () => {
   const mode = process.argv[2] || 'preview';
@@ -25,7 +25,7 @@ const DUR = 15.0, FPS = 60;
   await page.waitForFunction('window.__ready === true', { timeout: 60000 });
 
   const times = mode === 'preview'
-    ? [0.9, 2.2, 3.35, 4.6, 5.9, 6.6, 8.0, 9.5, 10.3, 11.6, 12.3, 13.4, 14.6]
+    ? [1.5, 2.9, 4.2, 6.5, 9.2, 10.6, 13.0]
     : Array.from({ length: Math.round(DUR * FPS) }, (_, i) => i / FPS);
 
   for (let i = 0; i < times.length; i++) {

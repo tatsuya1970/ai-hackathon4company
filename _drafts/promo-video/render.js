@@ -4,12 +4,12 @@ const { fork, execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const DUR = 15.0, FPS = 60;
+const DUR = 13.3, FPS = 60;
 const TOTAL = Math.round(DUR * FPS);
 const WORKERS = +(process.argv[2] || 5);
 const HERE = __dirname;
 const outDir = path.join(HERE, 'frames');
-const mp4 = path.join(HERE, 'promo-15s.mp4');
+const mp4 = path.join(HERE, 'promo-13s.mp4');
 
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
