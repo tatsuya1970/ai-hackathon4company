@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>promo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=block">
+<style>
+  html,body{margin:0;padding:0;background:#000;overflow:hidden}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="cv" width="1080" height="1920"></canvas>
+<script>
+const W = 1080, H = 1920;
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+/* ───────── design tokens（サイトの base.css と同一） ───────── */
+const C = {
+  paper:'#FFFDFA', tint:'#F7F3EC', tintAlt:'#EFE7DB',
+  navy:'#14213D', navyDeep:'#0A1527', navyMid:'#2E4D7B', navySoft:'#5B7CAE',
+  shu:'#C8102E', shuInk:'#9E0B22',
+  lemon:'#F5D90A',
+  ink:'#242220', muted:'#6B655F', rule:'#E4DACD',
+  onDark:'#F4F1EC'
+};
+const SERIF  = '"Noto Serif JP", serif';
+const GOTHIC = '"Noto Sans JP", sans-serif';
+const LATIN  = '"Space Grotesk", sans-serif';
+
+/* ───────── easing / util ───────── */
+const cl = (x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const outExpo  = x => x>=1?1:1-Math.pow(2,-10*x);
+const outCubic = x => 1-Math.pow(1-x,3);
+const outQuint = x => 1-Math.pow(1-x,5);
+const outBack  = x => 1+2.2*Math.pow(x-1,3)+1.4*Math.pow(x-1,2);
+const ioCubic  = x => x<.5 ? 4*x*x*x : 1-Math.pow(-2*x+2,3)/2;
+/* 区間 [a,b] の進捗 */
+const seg = (t,a,b)=>cl((t-a)/(b-a));
+
+function font(weight,size,family){ return weight+' '+size+'px '+family; }
+function setLS(v){ try{ ctx.letterSpacing = v; }catch(e){} }
+
+/* ───────── 和紙のテクスチャ（決定論的ノイズ） ───────── */
+let grainCv = null;
+function buildGrain(){
+  const g = document.createElement('canvas'); g.width=W; g.height=H;
+  const gx = g.getContext('2d');
+  const img = gx.createImageData(W,H);
+  let s = 20250403 >>> 0;
+  const rnd = ()=>{ s^=s<<13; s>>>=0; s^=s>>17; s^=s<<5; s>>>=0; return s/4294967296; };
+  for(let i=0;i<img.data.length;i+=4){
+    const v = (rnd()*255)|0;
+    img.data[i]=img.data[i+1]=img.data[i+2]=v;
+    img.data[i+3]=10;
+  }
+  gx.putImageData(img,0,0);
+  grainCv = g;
+}
+
+/* ───────── 青海波 ───────── */
+function seigaiha(r, color, alpha, lw, dy){
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  const vs = r*0.52, hs = r*2;
+  const rings = [1,.74,.49,.25];
+  let row = 0;
+  for(let y = -r + (dy % vs); y < H + r; y += vs, row++){
+    const ox = (row%2) ? r : 0;
+    for(let x = -hs + ox; x < W + hs; x += hs){
+      for(const k of rings){
+        ctx.beginPath();
+        ctx.arc(x, y, r*k, Math.PI, Math.PI*2);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
+}
+
+/* ───────── 背景 ───────── */
+function bgPaper(t){
+  ctx.fillStyle = C.paper; ctx.fillRect(0,0,W,H);
+  const g = ctx.createLinearGradient(0,0,W,H);
+  g.addColorStop(0,'rgba(247,243,236,0)');
+  g.addColorStop(1,'rgba(239,231,219,.9)');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  seigaiha(220, C.navy, .055, 2, -t*7);
+}
+function bgNavy(t, deep){
+  ctx.fillStyle = deep ? C.navyDeep : C.navy; ctx.fillRect(0,0,W,H);
+  const g = ctx.createRadialGradient(W*.30,H*.32,60, W*.30,H*.32, W*.78);
+  g.addColorStop(0,'rgba(46,77,123,.55)');
+  g.addColorStop(1,'rgba(10,21,39,0)');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  seigaiha(230, '#A9C2E4', .085, 2, -t*9);
+}
+function vignette(){
+  const g = ctx.createRadialGradient(W/2,H/2,H*.30, W/2,H/2,H*.62);
+  g.addColorStop(0,'rgba(0,0,0,0)');
+  g.addColorStop(1,'rgba(10,21,39,.26)');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+}
+function grain(){
+  if(!grainCv) return;
+  ctx.save(); ctx.globalAlpha = .55; ctx.drawImage(grainCv,0,0); ctx.restore();
+}
+
+/* ───────── テキスト：マスク・リビール ───────── */
+/* p: 0→1 で左から現れる。bar=true でレモン／朱のワイプバーが先行する */
+function reveal(text, x, y, p, opt){
+  opt = opt || {};
+  if(p<=0) return 0;
+  const w = ctx.measureText(text).width;
+  const asc = opt.size || 80;
+  const e = outQuint(p);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x-10, y-asc*1.3, w*e+20, asc*2.2);
+  ctx.clip();
+  ctx.globalAlpha = (opt.alpha==null?1:opt.alpha);
+  ctx.translate(0,(1-outExpo(p))*(opt.rise==null?18:opt.rise));
+  ctx.fillText(text,x,y);
+  ctx.restore();
+  if(opt.bar && p<1){
+    ctx.save();
+    ctx.fillStyle = opt.bar;
+    ctx.fillRect(x+w*e, y-asc*0.92, Math.max(6, asc*0.10), asc*1.22);
+    ctx.restore();
+  }
+  return w;
+}
+
+/* 単純フェード＋上昇 */
+function rise(fn, p, dist){
+  if(p<=0) return;
+  ctx.save();
+  ctx.globalAlpha = cl(p*1.35);
+  ctx.translate(0,(1-outExpo(p))*(dist==null?26:dist));
+  fn();
+  ctx.restore();
+}
+
+/* 細いラベル（ラテン） */
+function label(text,x,y,p,color,size,ls){
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.font = font(500, size||26, LATIN);
+  setLS(ls||'.26em');
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  reveal(text.toUpperCase(), x, y, p, {size:size||26, rise:10});
+  setLS('0px');
+  ctx.restore();
+}
+
+/* 「解」の朱印 */
+function hanko(cx, cy, s, p){
+  const e = outBack(cl(p));
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.rotate((1-cl(p))*-0.22);
+  ctx.scale(e,e);
+  ctx.globalAlpha = cl(p*2);
+  ctx.fillStyle = C.shu;
+  ctx.fillRect(-s/2,-s/2,s,s);
+  ctx.fillStyle = C.lemon;
+  ctx.fillRect(-s/2, s/2-s*0.115, s, s*0.115);
+  ctx.fillStyle = C.paper;
+  ctx.font = font(900, s*0.62, SERIF);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('解', 0, -s*0.045);
+  ctx.restore();
+}
+
+/* 写真（デュオトーン気味に敷く） */
+const photo = new Image();
+photo.src = 'hero.jpg';
+function drawPhoto(alpha, zoom, pan){
+  if(!photo.complete || !photo.naturalWidth) return;
+  const iw = photo.naturalWidth, ih = photo.naturalHeight;
+  const sc = Math.max(W/iw, H/ih) * zoom;
+  const dw = iw*sc, dh = ih*sc;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(photo, (W-dw)/2 - pan, (H-dh)/2, dw, dh);
+  ctx.restore();
+}
+
+/* 角丸の矩形パス */
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+}
+/* p: 0→1 でポンと現れる（中心 cx,cy 基準の拡大） */
+function pop(cx, cy, p, fn){
+  if(p<=0) return;
+  const e = outBack(cl(p));
+  ctx.save();
+  ctx.globalAlpha *= cl(p*2);
+  ctx.translate(cx,cy); ctx.scale(e,e); ctx.translate(-cx,-cy);
+  fn();
+  ctx.restore();
+}
+
+/* 小さな見出し（和文） */
+function jlabel(text, x, y, p, color, size){
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.font = font(700, size||28, GOTHIC);
+  setLS('.12em');
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  reveal(text, x, y, p, {size:size||28, rise:10});
+  setLS('0px');
+  ctx.restore();
+}
+
+/* ───────── 挿絵（サイトの .vs の SVG を Canvas で描き直したもの） ───────── */
+
+function ilHack(t){
+  ctx.lineJoin='round'; ctx.lineCap='round';
+  const ln = (w)=>{ ctx.strokeStyle=C.ink; ctx.lineWidth=w||3; ctx.stroke(); };
+  // ノートPC
+  rr(70,46,300,192,6); ctx.fillStyle=C.paper; ctx.fill(); ln(4);
+  ctx.fillStyle=C.tint; rr(84,60,272,18,3); ctx.fill();
+  ctx.fillStyle=C.muted; [96,108,120].forEach(x=>{ ctx.beginPath(); ctx.arc(x,69,3,0,7); ctx.fill(); });
+  ctx.fillStyle='rgba(36,34,32,.22)';
+  rr(98,96,70,6,3); ctx.fill(); rr(98,142,52,6,3); ctx.fill();
+  // 入力欄（文字が入っていく）
+  const typ = seg(t,1.85,2.35);
+  [[108,1],[154,0.5]].forEach(([y,k],i)=>{
+    rr(98,y,116,22,3); ctx.fillStyle=C.paper; ctx.fill(); ctx.strokeStyle=C.ink; ctx.lineWidth=2; ctx.stroke();
+    const w = 90*cl(typ*2 - i*0.6)*k + (i?40*cl(typ*2-0.6):0);
+    if(w>0){ ctx.fillStyle=C.navySoft; rr(104,y+8,w,6,3); ctx.fill(); }
+  });
+  // 送信ボタン（クリックで沈む）
+  const click = seg(t,2.48,2.62);
+  const press = click>0 && click<1 ? 2 : 0;
+  ctx.fillStyle = C.lemon; rr(98,190+press,92,28,3); ctx.fill();
+  ctx.fillStyle = C.ink; ctx.font=font(700,15,GOTHIC); ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.fillText('送信',144,209+press);
+  // グラフ（送信後に伸びる）
+  ctx.beginPath(); ctx.moveTo(244,212); ctx.lineTo(354,212); ctx.moveTo(244,212); ctx.lineTo(244,112);
+  ctx.strokeStyle='rgba(36,34,32,.4)'; ctx.lineWidth=2; ctx.stroke();
+  const bars = [[254,42],[278,62],[302,34],[326,84]];
+  bars.forEach(([x,h],i)=>{
+    const g = outCubic(seg(t, 1.55+i*0.08, 2.05+i*0.08)) * (0.55 + 0.45*outBack(seg(t,2.60+i*0.05,2.95+i*0.05)));
+    ctx.fillStyle = i===3 ? C.shu : C.navyMid;
+    ctx.fillRect(x, 212-h*g, 16, h*g);
+  });
+  // 台座
+  ctx.beginPath(); ctx.moveTo(52,238); ctx.lineTo(388,238); ctx.lineTo(408,258);
+  ctx.quadraticCurveTo(412,266,402,266); ctx.lineTo(38,266); ctx.quadraticCurveTo(28,266,32,258); ctx.closePath();
+  ctx.fillStyle=C.tintAlt; ctx.fill(); ln(4);
+  // スマートフォン（チャットが流れる）
+  rr(424,84,96,182,14); ctx.fillStyle=C.paper; ctx.fill(); ln(4);
+  ctx.fillStyle='rgba(36,34,32,.22)'; rr(456,94,32,5,2.5); ctx.fill();
+  const bub = [[436,116,54,C.tint],[458,144,52,C.lemon],[436,172,64,C.tint],[466,200,44,C.lemon]];
+  bub.forEach((b,i)=>pop(b[0]+b[2]/2, b[1]+10, seg(t,1.75+i*0.16,2.05+i*0.16), ()=>{
+    ctx.fillStyle=b[3]; rr(b[0],b[1],b[2],20,10); ctx.fill();
+  }));
+  // カーソル（ボタンへ移動 → クリック）
+  const mv = outCubic(seg(t,2.05,2.48));
+  const cx = 250 + (176-250)*mv, cy = 300 + (206-300)*mv;
+  if(seg(t,1.95,2.1)>0){
+    ctx.save(); ctx.globalAlpha *= seg(t,1.95,2.1);
+    ctx.translate(cx-176, cy-206);
+    ctx.beginPath(); ctx.moveTo(176,206); ctx.lineTo(176,232); ctx.lineTo(182,227); ctx.lineTo(187,237);
+    ctx.lineTo(192,235); ctx.lineTo(187,225); ctx.lineTo(195,224); ctx.closePath();
+    ctx.fillStyle=C.ink; ctx.fill(); ctx.strokeStyle=C.paper; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.restore();
+  }
+  // クリックの波紋
+  const rp = seg(t,2.50,2.95);
+  if(rp>0 && rp<1){
+    ctx.save(); ctx.globalAlpha *= 1-rp; ctx.strokeStyle=C.shu; ctx.lineWidth=4;
+    [20,34].forEach(r0=>{ ctx.beginPath(); ctx.arc(178,208,r0+rp*22,Math.PI*1.05,Math.PI*1.75); ctx.stroke(); });
+    ctx.restore();
+  }
+  // 「動く」バッジ
+  pop(334, 43, seg(t,2.62,2.95), ()=>{
+    ctx.fillStyle=C.lemon; rr(302,30,64,26,13); ctx.fill();
+    ctx.fillStyle=C.ink; ctx.font=font(700,15,GOTHIC); ctx.textAlign='center'; ctx.fillText('動く',334,48);
+  });
+  // チーム
+  ctx.fillStyle=C.navySoft;
+  [130,250].forEach(x=>{ ctx.beginPath(); ctx.arc(x,296,13,0,7); ctx.fill(); rr(x-20,314,40,40,16); ctx.fill(); });
+  ctx.beginPath(); ctx.moveTo(148,312); ctx.lineTo(176,278); ln();
+  // 「解」の印
+  pop(491, 323, seg(t,2.85,3.25), ()=>{
+    ctx.fillStyle=C.shu; rr(468,300,46,46,5); ctx.fill();
+    ctx.fillStyle=C.lemon; ctx.fillRect(475,334,32,4);
+    ctx.fillStyle=C.paper; ctx.font=font(900,26,SERIF); ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.fillText('解',491,329);
+  });
+}
+
+/* ══════════════════════════════════════════════
+   縦版（1080×1920）のシーン。scene.html の各シーンを縦に組み直したもの。
+   タイミングは横版と同じ（音声を共有するため）。
+   SNS の UI に隠れないよう、上 200px・下 320px には主要な文字を置かない。
+   ══════════════════════════════════════════════ */
+
+/* 中央揃えの reveal（左端を計算して渡す） */
+function revealC(text, cx, y, p, opt){
+  const w = ctx.measureText(text).width;
+  return reveal(text, cx - w/2, y, p, opt);
+}
+
+/* A  0.00–1.70   アイデアに価値はない。 */
+function sA(t){
+  ctx.fillStyle = C.navyDeep; ctx.fillRect(0,0,W,H);
+  seigaiha(200, '#A9C2E4', .05, 2, -t*9);
+  const z = 1 + t*0.018;
+  ctx.save();
+  ctx.translate(W/2, H/2); ctx.scale(z,z); ctx.translate(-W/2, -H/2);
+  ctx.fillStyle = C.onDark;
+  ctx.font = font(900, 150, SERIF);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  setLS('.04em');
+  revealC('アイデアに', W/2, 900, seg(t,0.18,0.80), {size:150, bar:C.shu});
+  revealC('価値はない。', W/2, 1090, seg(t,0.45,1.10), {size:150, bar:C.shu});
+  setLS('0px');
+  ctx.restore();
+  grain(); vignette();
+}
+
+/* B  1.70–3.20   動かなければ、ただのゴミ。（付箋が落ちる） */
+const NOTES = [
+  [120,250,-6,'#F7F3EC'],[450,230,4,'#F4D3D3'],[780,260,-3,'#FBF1B0'],
+  [160,520,5,'#F4D3D3'],[480,500,-5,'#FBF1B0'],[790,530,3,'#F7F3EC'],
+  [110,790,-4,'#FBF1B0'],[440,780,6,'#F7F3EC'],[770,800,-6,'#F4D3D3']
+];
+function sB(t){
+  bgPaper(t);
+  NOTES.forEach((n,i)=>{
+    const t0 = 0.35 + ((i*5)%9)*0.05;
+    const d = Math.max(0, t - t0);
+    const y = n[1] + 3400*d*d;
+    const x = n[0] + (i%2?1:-1)*100*d;
+    const rot = (n[2] + (i%2?1:-1)*140*d) * Math.PI/180;
+    // 文字（y=1100 以下）に重ならないよう、落ちながら消える
+    const fade = cl(1 - (y - n[1]) / 420);
+    if(fade <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.translate(x+90, y+90); ctx.rotate(rot);
+    ctx.shadowColor='rgba(20,33,61,.14)'; ctx.shadowBlur=18; ctx.shadowOffsetY=8;
+    ctx.fillStyle=n[3]; ctx.fillRect(-90,-90,180,180);
+    ctx.shadowColor='transparent';
+    ctx.strokeStyle='rgba(36,34,32,.30)'; ctx.lineWidth=5; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(-58,-40); ctx.lineTo(56,-40); ctx.moveTo(-58,-4); ctx.lineTo(30,-4);
+    ctx.moveTo(-58,32); ctx.lineTo(44,32); ctx.stroke();
+    ctx.restore();
+  });
+
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.fillStyle = C.ink;
+  ctx.font = font(700, 84, SERIF);
+  setLS('.04em');
+  reveal('動かなければ、', 90, 1230, seg(t,0.08,0.55), {size:84});
+  ctx.font = font(900, 168, SERIF);
+  reveal('ただの', 90, 1440, seg(t,0.38,0.85), {size:168, bar:C.shu});
+  ctx.fillStyle = C.shu;
+  reveal('ゴミ。', 90, 1630, seg(t,0.62,1.05), {size:168, bar:C.shu});
+  setLS('0px');
+  grain(); vignette();
+}
+
+/* C  3.20–5.20   課題解決AIハッカソン（タイトル） */
+function sC(t){
+  bgNavy(t, true);
+  hanko(W/2, 700, 190, seg(t,0.05,0.70));
+
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  const p1 = seg(t,0.30,1.05);
+  if(p1>0){
+    ctx.save();
+    ctx.globalAlpha = cl(p1*1.4);
+    ctx.translate(0,(1-outExpo(p1))*24);
+    const z = 1 + t*0.012;
+    ctx.translate(W/2,1080); ctx.scale(z,z); ctx.translate(-W/2,-1080);
+    ctx.fillStyle = C.onDark;
+    ctx.font = font(900, 150, SERIF);
+    setLS('.04em');
+    ctx.fillText('課題解決', W/2, 1040);
+    ctx.fillText('AIハッカソン', W/2, 1210);
+    setLS('0px');
+    ctx.restore();
+  }
+  const p2 = seg(t,0.65,1.25);
+  if(p2>0){ ctx.fillStyle = C.shu; ctx.fillRect(W/2-190*outExpo(p2), 1270, 380*outExpo(p2), 8); }
+  grain(); vignette();
+}
+
+/* D  5.20–7.60   キャッチ */
+function s2(t){
+  bgNavy(t);
+  jlabel('だから、動くものをつくる。', 90, 520, seg(t,0.12,0.7), C.lemon, 40);
+
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.fillStyle = C.onDark;
+  ctx.font = font(900, 138, SERIF);
+  setLS('.01em');
+  reveal('課題も', 90, 720, seg(t,0.22,0.90), {size:138, bar:C.lemon});
+  reveal('新規事業も、', 90, 880, seg(t,0.40,1.15), {size:138, bar:C.lemon});
+  setLS('0px');
+
+  // 「3時間で」：「3」をレモンで強調
+  const p2 = seg(t,0.62,1.40);
+  if(p2>0){
+    ctx.save();
+    ctx.font = font(900, 138, SERIF);
+    const a = '3', b = '時間で';
+    const wa = ctx.measureText(a).width, wb = ctx.measureText(b).width;
+    const total = wa + wb, e = outQuint(p2);
+    ctx.beginPath(); ctx.rect(80, 900, (total+40)*e, 200); ctx.clip();
+    ctx.translate(0,(1-outExpo(p2))*20);
+    ctx.fillStyle = C.lemon; ctx.fillText(a, 90, 1040);
+    ctx.fillStyle = C.onDark; ctx.fillText(b, 90+wa, 1040);
+    ctx.restore();
+    if(p2<1){ ctx.fillStyle=C.lemon; ctx.fillRect(90+total*e, 932, 14, 128); }
+    const ul = seg(t,1.20,1.8);
+    if(ul>0){ ctx.fillStyle=C.lemon; ctx.fillRect(90, 1068, wa*outExpo(ul), 10); }
+  }
+  ctx.fillStyle = C.onDark;
+  ctx.font = font(900, 138, SERIF);
+  reveal('形にします。', 90, 1210, seg(t,0.85,1.60), {size:138, bar:C.lemon});
+
+  // 下段メタ 30min / 3h / 1社（横3列）
+  const items = [['30','min','お題説明'],['3','hours','ハックタイム'],['1','社','お題は御社だけ']];
+  const bx = 90, by = 1460, gapx = 310;
+  items.forEach((it,i)=>{
+    const p = seg(t, 1.35+i*0.14, 2.10+i*0.14);
+    if(p<=0) return;
+    ctx.save();
+    ctx.globalAlpha = cl(p*1.4);
+    ctx.translate(0,(1-outExpo(p))*20);
+    const x = bx+i*gapx;
+    ctx.fillStyle = 'rgba(244,241,236,.22)';
+    ctx.fillRect(x, by-66, 2, 104);
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    ctx.fillStyle = C.onDark;
+    ctx.font = font(700, 76, LATIN);
+    ctx.fillText(it[0], x+24, by);
+    const wn = ctx.measureText(it[0]).width;
+    ctx.fillStyle = C.lemon;
+    ctx.font = font(500, 30, it[1]==='社'?GOTHIC:LATIN);
+    ctx.fillText(it[1], x+32+wn, by-38);
+    ctx.fillStyle = 'rgba(244,241,236,.72)';
+    ctx.font = font(500, 28, GOTHIC);
+    ctx.fillText(it[2], x+24, by+40);
+    ctx.restore();
+  });
+  grain(); vignette();
+}
+
+/* E  7.60–10.40   動くものが残る（挿絵＋3項目） */
+function sE(t){
+  bgPaper(t);
+  const p = seg(t,0.05,0.60);
+  ctx.save();
+  ctx.globalAlpha = cl(p*1.5);
+  const sc = 1.62;
+  ctx.translate((W - 540*sc)/2 + 20, 300 + (1-outExpo(p))*30);
+  ctx.scale(sc,sc);
+  ilHack(t + 1.3);
+  ctx.restore();
+
+  jlabel('このハッカソンでは', 90, 1030, seg(t,0.10,0.6), C.shu, 34);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.fillStyle = C.ink;
+  ctx.font = font(900, 104, SERIF);
+  setLS('.03em');
+  reveal('動くものが残る。', 90, 1160, seg(t,0.18,0.85), {size:104, bar:C.shu});
+  setLS('0px');
+
+  const rows = ['生成AIで、3時間で動くものをつくる','その場で触って、使えるか確かめる','最優秀賞のチームと、そのまま協業へ'];
+  rows.forEach((r,i)=>{
+    const q = seg(t, 0.55+i*0.22, 1.15+i*0.22);
+    rise(()=>{
+      const y = 1310 + i*112;
+      ctx.fillStyle = C.shu; rr(90, y-36, 48, 48, 6); ctx.fill();
+      ctx.strokeStyle = C.paper; ctx.lineWidth = 5; ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.beginPath(); ctx.moveTo(102, y-12); ctx.lineTo(112, y-2); ctx.lineTo(127, y-23); ctx.stroke();
+      ctx.fillStyle = C.ink; ctx.font = font(700, 40, GOTHIC);
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+      ctx.fillText(r, 160, y);
+      ctx.strokeStyle = C.rule; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(90, y+42); ctx.lineTo(990, y+42); ctx.stroke();
+    }, q, 20);
+  });
+  grain(); vignette();
+}
+
+/* S5  10.40–13.30   ロゴ + CTA（QRコードと検索窓） */
+const qrImg = new Image();
+qrImg.src = 'qr.png';
+function s5(t){
+  bgNavy(t, true);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, H-360, W, 360); ctx.clip();
+  seigaiha(150, C.lemon, .08, 2, -t*16);
+  ctx.restore();
+
+  hanko(W/2, 380, 140, seg(t,0.08,0.70));
+
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  const p1 = seg(t,0.25,1.00);
+  if(p1>0){
+    ctx.save();
+    ctx.globalAlpha = cl(p1*1.4);
+    ctx.translate(0,(1-outExpo(p1))*24);
+    ctx.fillStyle = C.onDark;
+    ctx.font = font(900, 124, SERIF);
+    setLS('.04em');
+    ctx.fillText('課題解決', W/2, 640);
+    ctx.fillText('AIハッカソン', W/2, 780);
+    setLS('0px');
+    ctx.restore();
+  }
+  const p2 = seg(t,0.55,1.05);
+  if(p2>0){ ctx.fillStyle = C.shu; ctx.fillRect(W/2-160*outExpo(p2), 830, 320*outExpo(p2), 7); }
+
+  rise(()=>{
+    ctx.fillStyle = C.onDark;
+    ctx.font = font(700, 44, SERIF);
+    ctx.textAlign='center';
+    ctx.fillText('企業・団体・自治体のお題', W/2, 930);
+    ctx.fillText('（課題・新規事業）を募集中', W/2, 996);
+  }, seg(t,0.65,1.35), 22);
+
+  // QRコード（白いカードの上に。読み取り用の余白を確保）
+  const qs = 330, pad = 34, cardW = qs + pad*2;
+  const qx = W/2 - cardW/2, qy = 1050;
+  pop(W/2, qy + cardW/2, seg(t,0.90,1.45), ()=>{
+    ctx.save();
+    ctx.shadowColor='rgba(0,0,0,.35)'; ctx.shadowBlur=30; ctx.shadowOffsetY=10;
+    ctx.fillStyle='#fff'; rr(qx, qy, cardW, cardW, 18); ctx.fill();
+    ctx.restore();
+    if(qrImg.complete && qrImg.naturalWidth){
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(qrImg, qx+pad, qy+pad, qs, qs);
+      ctx.imageSmoothingEnabled = true;
+    }
+  });
+
+  // 検索窓：「課題解決ハッカソン」で検索
+  const sy = 1510, sh = 96, sw = 640, sx = W/2 - 405;
+  rise(()=>{
+    ctx.fillStyle = '#fff'; rr(sx, sy, sw, sh, sh/2); ctx.fill();
+    ctx.fillStyle = C.ink; ctx.font = font(700, 44, GOTHIC);
+    ctx.textAlign='left'; ctx.textBaseline='middle';
+    const typed = '課題解決ハッカソン';
+    const n = Math.round(typed.length * cl(seg(t,1.40,2.00)));
+    ctx.fillText(typed.slice(0, n), sx+44, sy+sh/2+2);
+    // 入力中のカーソル
+    if(n < typed.length || Math.floor(t*2.5)%2===0){
+      const cw = ctx.measureText(typed.slice(0, n)).width;
+      ctx.fillStyle = C.navyMid; ctx.fillRect(sx+48+cw, sy+26, 4, sh-52);
+    }
+    // 虫めがね
+    const mx = sx+sw-60, my = sy+sh/2;
+    ctx.strokeStyle = C.navy; ctx.lineWidth = 7; ctx.lineCap='round';
+    ctx.beginPath(); ctx.arc(mx-6, my-6, 18, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mx+7, my+7); ctx.lineTo(mx+22, my+22); ctx.stroke();
+    ctx.fillStyle = C.lemon; ctx.font = font(900, 50, SERIF);
+    ctx.textAlign='left';
+    ctx.fillText('で検索', sx+sw+20, sy+sh/2+2);
+  }, seg(t,1.20,1.75), 18);
+
+  const p6 = seg(t,1.55,2.4);
+  ctx.fillStyle = C.lemon;
+  ctx.fillRect(0, H-18, W*outExpo(p6), 18);
+  grain(); vignette();
+}
+
+/* ───────── シーン構成 / ワイプ ───────── */
+const SCENES = [
+  {s:0.00,  e:1.70,  f:sA, wipe:null},
+  {s:1.70,  e:3.20,  f:sB, wipe:null},     // ハードカット
+  {s:3.20,  e:5.20,  f:sC, wipe:null},     // ハードカット
+  {s:5.20,  e:7.60,  f:s2, wipe:C.lemon},
+  {s:7.60,  e:10.40, f:sE, wipe:C.shu},
+  {s:10.40, e:13.30, f:s5, wipe:C.lemon}
+];
+const TR = 0.42;   // ワイプ時間
+const SLANT = 160; // ワイプのエッジの傾き
+
+function clipWipe(p){
+  const e = ioCubic(p);
+  const x = -SLANT + (W + SLANT*2) * e;
+  ctx.beginPath();
+  ctx.moveTo(-5, -5);
+  ctx.lineTo(x + SLANT, -5);
+  ctx.lineTo(x - SLANT, H+5);
+  ctx.lineTo(-5, H+5);
+  ctx.closePath();
+  ctx.clip();
+  return x;
+}
+
+function renderFrame(t){
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
+
+  let k = 0;
+  for(let i=0;i<SCENES.length;i++) if(t >= SCENES[i].s) k = i;
+  const sc = SCENES[k];
+  const into = t - sc.s;
+
+  if(k>0 && into < TR && sc.wipe){
+    const prev = SCENES[k-1];
+    prev.f(t - prev.s);                 // 前シーンを継続描画
+    const p = into / TR;
+    ctx.save();
+    const x = clipWipe(p);
+    sc.f(into);
+    ctx.restore();
+    // ワイプのエッジライン
+    ctx.save();
+    ctx.strokeStyle = sc.wipe; ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.moveTo(x+SLANT, -5); ctx.lineTo(x-SLANT, H+5); ctx.stroke();
+    ctx.restore();
+  } else {
+    sc.f(into);
+  }
+
+  // 冒頭のフェードイン（末尾は CTA のまま保持）
+  if(t < 0.30){ ctx.fillStyle='rgba(10,21,39,'+(1-t/0.30)+')'; ctx.fillRect(0,0,W,H); }
+}
+
+window.__ready = false;
+window.__render = renderFrame;
+
+(async ()=>{
+  buildGrain();
+  const specs = [
+    '900 138px "Noto Serif JP"','700 74px "Noto Serif JP"','500 44px "Noto Serif JP"',
+    '700 26px "Noto Sans JP"','500 26px "Noto Sans JP"','400 24px "Noto Sans JP"',
+    '700 44px "Space Grotesk"','500 26px "Space Grotesk"'
+  ];
+  try{
+    await Promise.all(specs.map(s=>document.fonts.load(s,'課題解決AIハッカソン御社時間でますABC0123')));
+    await document.fonts.ready;
+  }catch(e){}
+  for(const im of [photo, qrImg]){
+    if(!im.complete){ await new Promise(r=>{ im.onload=r; im.onerror=r; }); }
+  }
+  renderFrame(0);
+  window.__ready = true;
+})();
+</script>
+</body>
+</html>
